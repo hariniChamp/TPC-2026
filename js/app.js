@@ -100,7 +100,7 @@ function focusQ(){setTimeout(()=>{const el=document.querySelector('.q-body input
 
 /* ---------- events ---------- */
 const kwFrom=txt=>Object.keys(SYN).filter(k=>SYN[k].test(txt)&&Object.values(ROLES).some(r=>r.skills.some(s=>s.name===k)));
-const fixCounts=d=>{d.sent=Math.max(0,Math.round(+d.sent||0));d.replies=clamp(Math.round(+d.replies||0),0,d.sent);d.interviews=clamp(Math.round(+d.interviews||0),0,d.replies)};
+const fixCounts=d=>{d.sent=Math.max(0,Math.round(+d.sent||0));d.replies=clamp(Math.round(+d.replies||0),0,d.sent);d.interviews=clamp(Math.round(+d.interviews||0),0,d.replies);d.offers=clamp(Math.round(+d.offers||0),0,d.interviews)};
 const H={
  go(t){if(!S)return;ui.view=t.dataset.v;ui.prep=null;ui.overlay=null;ui.enter=true;render();window.scrollTo(0,0);try{history.replaceState(null,'','#'+ui.view)}catch(e){}},
  done(t){const P=S.current.plan,id=t.dataset.id,was=!!P.done[id];P.done[id]=!was;save();
@@ -134,27 +134,38 @@ const H={
  newDebrief(){ui.overlay={type:'debrief'};renderOverlay()},
  newStory(){ui.overlay={type:'story'};renderOverlay()},
  rate(t){t.parentElement.querySelectorAll('button').forEach(b=>b.classList.toggle('on',b===t))},
- checkin(){const P=S.current.plan;ui.overlay={type:'checkin',weekId:S.current.id,step:1,done:Object.assign({},P.done),upd:{}};renderOverlay()},
+ // The plan is rebuilt here if it is missing. Before, a state saved without one
+ // made this throw and the button looked dead.
+ checkin(){if(!S)return;if(!S.current)S.current={id:mondayOf(TODAY),plan:null};
+  if(!S.current.plan)S.current.plan=buildPlan(diagnose());
+  const P=S.current.plan;
+  ui.overlay={type:'checkin',weekId:S.current.id,step:1,done:Object.assign({},P.done||{}),logged:{apply:0,build:0,prep:0},upd:{}};renderOverlay()},
  ckDone(t){const o=ui.overlay;o.done[t.dataset.id]=!o.done[t.dataset.id];renderOverlay()},
- ckNext(){ui.overlay.step=2;renderOverlay()},
- ckBack(){ui.overlay.step=1;renderOverlay()},
+ ckNext(){const o=ui.overlay;o.step=Math.min(3,(o.step||1)+1);o.err='';renderOverlay()},
+ ckBack(){const o=ui.overlay;o.step=Math.max(1,(o.step||1)-1);o.err='';renderOverlay()},
+ ckHrs(t){const o=ui.overlay,k=t.dataset.k;o.logged[k]=Math.max(0,Math.round((o.logged[k]+ +t.dataset.d)*2)/2);renderOverlay()},
  ckUpd(t){const o=ui.overlay;o.upd[t.dataset.id]=t.dataset.v;if(t.dataset.v==='keep')delete o.upd[t.dataset.id];renderOverlay()},
- ckFinish(){const o=ui.overlay;o.result=commitCheckin(o);o.step=3;renderOverlay();renderMain()},
+ // A throw in commitCheckin used to leave the button looking dead. Surface it
+ // instead, and never lose the week the user just logged.
+ ckFinish(){const o=ui.overlay;
+  try{o.result=commitCheckin(o);o.step=4;o.err=''}
+  catch(err){o.err='Something went wrong saving this check-in. Your answers are still here — try Finish again.';console.error('check-in failed',err)}
+  renderOverlay();renderMain()},
  ckClose(){ui.overlay=null;ui.view='week';ui.enter=true;ui.lastProg=null;render();window.scrollTo(0,0)},
  settings(){ui.overlay={type:'settings'};ui.confirm=null;renderOverlay()},
  startOver(){try{localStorage.removeItem(LS)}catch(e){}S=null;ui.confirm=null;ui.overlay=null;ui.flow={step:'welcome'};render();window.scrollTo(0,0)},
  example(){seed();ui.overlay=null;ui.view='week';Object.assign(ui,{why:{},cause:{},skill:{},story:{},wk:{},allCauses:false,allSkills:false,itab:null});startLoading()},
- begin(){ui.overlay=null;ui.qEnter=true;ui.qPrevW=null;ui.flow={step:'q',i:0,draft:{name:'',role:'da',skills:[],resume:'',resumeName:'',hours:5,sent:0,replies:0,interviews:0,timing:'',tailor:'',referral:''}};render();window.scrollTo(0,0);focusQ()},
+ begin(){ui.overlay=null;ui.qEnter=true;ui.qPrevW=null;ui.flow={step:'q',i:0,draft:{name:'',school:'',year:'',major:'',gpa:'',role:'da',season:defSeason(),skills:[],resume:'',resumeName:'',hours:5,sent:0,replies:0,interviews:0,offers:0,confidence:0,timing:'',tailor:'',referral:''}};render();window.scrollTo(0,0);focusQ()},
  qExit(){ui.flow={step:'welcome'};render();window.scrollTo(0,0)},
- qPick(t){const d=ui.flow.draft,f=t.dataset.f;d[f]=f==='hours'?+t.dataset.v:t.dataset.v;ui.justPicked=f+':'+t.dataset.v;if(f==='role')d.skills=d.skills.filter(s=>ROLES[d.role].skills.some(x=>x.name===s));render()},
+ qPick(t){const d=ui.flow.draft,f=t.dataset.f;d[f]=(f==='hours'||f==='confidence')?+t.dataset.v:t.dataset.v;ui.justPicked=f+':'+t.dataset.v;if(f==='role')d.skills=d.skills.filter(s=>ROLES[d.role].skills.some(x=>x.name===s));render()},
  qSkill(t){const d=ui.flow.draft,v=t.dataset.v;ui.justPicked='skill:'+v;d.skills=d.skills.includes(v)?d.skills.filter(s=>s!==v):d.skills.concat(v);render()},
  qCount(t){const d=ui.flow.draft,f=t.dataset.f;d[f]=(+d[f]||0)+ +t.dataset.d;fixCounts(d);ui.bump=f;render()},
  qBack(){const f=ui.flow,vis=visibleQ(f.draft),p=vis.indexOf(f.i);if(p>0)swapQ(-1,()=>{f.i=vis[p-1]})},
  qNext(){const f=ui.flow,d=f.draft;fixCounts(d);if(!Q[f.i].valid(d))return;const vis=visibleQ(d),p=vis.indexOf(f.i);
   if(Q[f.i].id==='resume'&&d.resume&&!d.prefilled){detectSkills(d.resume,d.role).forEach(n=>{if(!d.skills.includes(n))d.skills.push(n)});d.prefilled=true}
   if(p<vis.length-1){swapQ(1,()=>{f.i=vis[p+1]});return}
-  const b=d.sent?{sent:d.sent,replies:d.replies,interviews:d.interviews,timing:d.timing,tailor:d.tailor,referral:d.referral}:null;
-  freshState({name:d.name.trim(),school:'',year:'',major:'',role:d.role,season:defSeason(),hours:d.hours,skills:d.skills.slice()},b,d.resume?{text:d.resume,name:d.resumeName||'Resume'}:null);
+  const b=d.sent?{sent:d.sent,replies:d.replies,interviews:d.interviews,offers:d.offers,timing:d.timing,tailor:d.tailor,referral:d.referral}:null;
+  freshState({name:d.name.trim(),school:d.school.trim(),year:d.year.trim(),major:d.major.trim(),gpa:(d.gpa||'').trim(),role:d.role,season:d.season||defSeason(),hours:d.hours,skills:d.skills.slice()},b,d.resume?{text:d.resume,name:d.resumeName||'Resume'}:null,d.confidence);
   Object.assign(ui,{view:'week',why:{},cause:{},skill:{},story:{},wk:{},allCauses:false,allSkills:false,itab:null});startLoading()},
  revealGo(){ui.flow=null;ui.view='week';ui.enter=true;ui.lastProg=null;render();window.scrollTo(0,0);try{history.replaceState(null,'','#week')}catch(e){}}
 };

@@ -50,12 +50,14 @@ function vWeek(){
    ${open?`<div class="task-more">${a.detail?`<p>${esc(a.detail)}${a.url?` <a class="link" href="${esc(a.url)}" target="_blank" rel="noopener">Open resource ↗</a>`:''}</p>`:''}<dl class="why"><dt>Why</dt><dd>${esc(a.why)}</dd><dt>Working if</dt><dd>${esc(a.metric)}</dd></dl></div>`:''}</div></div>`}).join('')}</div></div>`}).join('');
  return `<div class="wrap narrow">
  ${up?`<button class="notice" data-a="go" data-v="interviews">${ico('interviews','sm')}<span class="notice-t"><b>${esc(up.co)} interview</b> · ${fmtDay(up.interviewDate)}</span><span class="link small">Prep →</span></button>`:''}
+ <div class="stats">${[['Applied',dx.F.a],['Replies',dx.F.r],['Interviews',dx.F.i],['Offers',dx.F.o]].map(([l,n])=>`<button class="stat" data-a="go" data-v="applications"><span class="n">${n}</span><span class="l">${l}</span></button>`).join('')}</div>
  <section class="focus"><div class="eyebrow">Week ${weekNum()} · ${fmtRange(S.current.id)}</div>
   <h1 class="h-display${ui.enter?' anim-words':''}">${words(GOAL[dx.bottleneck])}</h1>
   ${L&&L.short&&dx.bottleneck!=='ok'?`<p class="h-sub">Main reason: <span class="hl${ui.enter?' anim-mark':''}">${esc(L.short)}</span>.</p>`:''}
   <a class="link small" href="#diagnosis" data-a="go" data-v="diagnosis">Why we think so →</a></section>
  <div class="prog"><div class="prog-top"><b>${doneA.length} of ${acts.length} done</b><span class="muted small">${hrs(doneH)} of ${hrs(total)}</span></div>${bar(progNow,'good big',ui.enter||ui.lastProg==null?null:ui.lastProg)}</div>
  ${acts.length?groups:`<div class="empty"><h3>No time planned</h3><button class="btn" data-a="hours">Adjust hours</button></div>`}
+ ${evidenceCard(dx)}
  <div class="checkin-cta"><div><b>Done for the week?</b><span class="muted small">${dd<0?`Check-in overdue since ${fmt(dueDay)}`:dd===0?'Check-in is due today':`Check-in due ${fmtDay(dueDay)}`}</span></div><button class="btn primary" data-a="checkin">Check in</button></div>
  <div class="quiet"><button class="link small" data-a="hours">Adjust hours</button><button class="link small" data-a="go" data-v="history">Past weeks</button>${S.sample?'<button class="link small" data-a="begin">Start my own</button>':''}</div>
  </div>`;
@@ -109,13 +111,54 @@ function vSkills(){
  <p class="small muted" style="margin-top:18px">Posting shares are sample figures for this prototype.</p></div>`;
 }
 
+/* PRD F5: for people applying in high volume, show their own tailored vs.
+   untailored reply rate. This is the product's test of the key assumption
+   that fewer, stronger applications beat more applications. */
+function evidenceCard(dx){
+ const settled=dx.settled,tl=settled.filter(a=>a.tailored),ut=settled.filter(a=>!a.tailored);
+ if(settled.length<10||!tl.length||!ut.length)return '';
+ const rt=rate(tl),ru=rate(ut);
+ if(rt==null||ru==null)return '';
+ const better=rt>ru,gap=Math.round(Math.abs(rt-ru)*100);
+ const row=(l,n,d,r,c)=>`<div class="ev-row"><span>${l}</span><div class="ev-track"><div class="ev-bar" style="--w:${Math.round((r||0)*100)}%;--c:var(--${c})"></div></div><b>${pct(r)}</b><small>${n} of ${d}</small></div>`;
+ return `<section class="card flat evidence"><h3>Your own evidence</h3>
+ <p class="small muted">Across your ${settled.length} applications old enough to judge:</p>
+ ${row('Tailored',nResp(tl),tl.length,rt,'green')}
+ ${row('Sent as-is',nResp(ut),ut.length,ru,'blue')}
+ <p class="small">${better?`Tailored applications replied <b>${gap} points</b> more often. On the hours you have, fewer and stronger beats more and faster.`:gap<5?'Too close to call so far. Keep tailoring some and sending others as-is, and SPLIT will keep checking.':`Sending as-is is ahead by ${gap} points so far — unusual, and worth a look at which postings you tailored.`}</p></section>`;
+}
+
+/* Funnel over time (PRD F6). One column per checked-in week, four stacked
+   stages. Values are cumulative totals as they stood at that check-in. */
+function funnelChart(weeks){
+ const pts=weeks.filter(w=>w.funnel);
+ if(pts.length<2)return '';
+ const max=Math.max(1,...pts.map(w=>w.funnel.a));
+ const STAGE=[['a','Applied','blue'],['r','Replies','green'],['i','Interviews','orange'],['o','Offers','purple']];
+ return `<section class="card flat"><h3>Your funnel over time</h3>
+ <div class="fchart" role="img" aria-label="Funnel by week. ${pts.map(w=>`Week of ${fmt(w.id)}: ${w.funnel.a} applied, ${w.funnel.r} replies, ${w.funnel.i} interviews, ${w.funnel.o} offers`).join('. ')}">
+  ${pts.map(w=>`<div class="fc-col"><div class="fc-stack">${STAGE.map(([k,l,c])=>`<div class="fc-bar" style="--h:${Math.round(w.funnel[k]/max*100)}%;--c:var(--${c})" title="${w.funnel[k]} ${lc(l)}"></div>`).join('')}</div><small>${fmt(w.id)}</small></div>`).join('')}
+ </div>
+ <div class="fc-legend">${STAGE.map(([k,l,c])=>`<span><i style="background:var(--${c})"></i>${l} <b>${pts[pts.length-1].funnel[k]}</b></span>`).join('')}</div></section>`;
+}
+
 function vHistory(){
  const weeks=S.weeks.slice().reverse();
+ const totH=w=>w.logged?w.logged.apply+w.logged.build+w.logged.prep:null;
  return `<div class="wrap narrow"><h1 class="h-page">Past weeks</h1><p class="muted lead">What you planned, what happened, and what SPLIT changed.</p>
- ${weeks.length?`<div class="list" style="margin-top:22px">${weeks.map(w=>{const wa=S.apps.filter(a=>a.week===w.id),r=nResp(wa),acts=w.actions||[],done=acts.filter(a=>a.done).length,open=!!ui.wk[w.id];
+ ${funnelChart(S.weeks)}
+ ${weeks.length?`<div class="list" style="margin-top:22px">${weeks.map(w=>{const wa=S.apps.filter(a=>a.week===w.id),r=w.replies!=null?w.replies:nResp(wa),sent=w.sent!=null?w.sent:wa.length,acts=w.actions||[],done=acts.filter(a=>a.done).length,open=!!ui.wk[w.id];
   const notes=(w.notes||[]).concat((w.tests||[]).filter(t=>t.msg&&!(w.notes||[]).includes(t.msg)).map(t=>t.msg));
-  return `<div class="sk2${open?' open':''}${oc(w.id)}"><button class="sk2-h" data-a="wkOpen" data-id="${w.id}" aria-expanded="${open}"><span class="sk2-m"><b>${fmtRange(w.id)}</b><small class="muted">${wa.length} ${pl(wa.length,'application')} · ${r} ${pl(r,'reply','replies')} · ${done} of ${acts.length} tasks</small></span>${chev(open)}</button>
-  ${open?`<div class="sk2-more" style="padding-left:16px">${splitBar(w.split)}<ul class="wk-acts">${acts.map(a=>`<li class="${a.done?'':'x'}"><span class="m">${a.done?'✓':'–'}</span><span>${esc(a.t)}</span></li>`).join('')}</ul><div class="kv"><b>What the results showed</b>${notes.map(n=>`<span>${esc(n)}</span>`).join('')}</div><div class="kv"><b>What SPLIT changed</b>${(w.changes||[]).map(n=>`<span>${esc(n)}</span>`).join('')}</div></div>`:''}</div>`}).join('')}</div>`:`<div class="empty" style="margin-top:22px">${ico('history','lg')}<h3>Nothing yet</h3><p>Each weekly check-in adds a week here.</p></div>`}
+  const lg=totH(w),planned=w.split?w.split.apply+w.split.build+w.split.prep:0;
+  return `<div class="sk2${open?' open':''}${oc(w.id)}"><button class="sk2-h" data-a="wkOpen" data-id="${w.id}" aria-expanded="${open}"><span class="sk2-m"><b>${fmtRange(w.id)}</b><small class="muted">${sent} ${pl(sent,'application')} · ${r} ${pl(r,'reply','replies')} · ${done} of ${acts.length} tasks${lg!=null?` · ${hrs(lg)} logged`:''}</small></span>${chev(open)}</button>
+  ${open?`<div class="sk2-more" style="padding-left:16px">
+   ${w.dx&&w.dx.head?`<p class="small"><b>SPLIT's read that week:</b> ${esc(w.dx.head)}${w.dx.lead?` Main reason: ${esc(w.dx.lead)}.`:''}</p>`:''}
+   <div class="wk-goal"><span class="small muted">Tasks finished</span>${bar(acts.length?done/acts.length*100:0,'good')}<b class="small">${done}/${acts.length}</b></div>
+   ${splitBar(w.split)}
+   ${lg!=null?`<div class="kv"><b>Hours: planned vs. logged</b>${['apply','build','prep'].map(k=>`<span>${CATS[k]}: ${hrs(w.split[k]||0)} planned · ${hrs(w.logged[k]||0)} logged</span>`).join('')}<span><b>${hrs(planned)} planned · ${hrs(lg)} logged</b>${planned?` (${Math.round(lg/planned*100)}% of plan)`:''}</span></div>`:''}
+   <ul class="wk-acts">${acts.map(a=>`<li class="${a.done?'':'x'}"><span class="m">${a.done?'✓':'–'}</span><span>${esc(a.t)}</span><span class="small muted">${hrs(a.h)}</span></li>`).join('')}</ul>
+   <div class="kv"><b>What the results showed</b>${notes.map(n=>`<span>${esc(n)}</span>`).join('')}</div>
+   <div class="kv"><b>What SPLIT changed</b>${(w.changes||[]).map(n=>`<span>${esc(n)}</span>`).join('')}</div></div>`:''}</div>`}).join('')}</div>`:`<div class="empty" style="margin-top:22px">${ico('history','lg')}<h3>Nothing yet</h3><p>Each weekly check-in adds a week here.</p></div>`}
  <p style="margin-top:18px"><button class="link small" data-a="go" data-v="week">← Back to this week</button></p></div>`;
 }
 
@@ -125,13 +168,22 @@ ICON.code='<path d="m8 7-5 5 5 5M16 7l5 5-5 5"/>';ICON.target='<circle cx="12" c
 const rTile=k=>`<span class="tile" style="--tc:var(--${RICON[k][1]})" aria-hidden="true"><svg viewBox="0 0 24 24">${ICON[RICON[k][0]]}</svg></span>`;
 const opt=(f,v,label,sub,on,icon)=>`<button class="opt${on?' on':''}${ui.justPicked===f+':'+v?' just':''}" data-a="qPick" data-f="${f}" data-v="${esc(v)}" aria-pressed="${on}">${icon||''}<span><b>${esc(label)}</b>${sub?`<small>${esc(sub)}</small>`:''}</span></button>`;
 const ctr=(f,label,sub,v)=>`<div class="ctr"><span><b>${label}</b><small>${sub}</small></span><div class="ctr-c"><button data-a="qCount" data-f="${f}" data-d="-1" aria-label="Fewer">−</button><input id="q-${f}" class="${ui.bump===f?'bump':''}" type="number" min="0" inputmode="numeric" data-ofn="${f}" value="${v}" aria-label="${label}"><button data-a="qCount" data-f="${f}" data-d="1" aria-label="More">+</button></div></div>`;
+const fld=(f,label,v,ph,why)=>`<label class="field"><span>${esc(label)}</span><input id="q-${f}" data-of="${f}" value="${esc(v||'')}" placeholder="${esc(ph||'')}" autocomplete="off">${why?`<small>${esc(why)}</small>`:''}</label>`;
+const SEASONS=()=>{const y=parse(TODAY).getFullYear(),m=parse(TODAY).getMonth(),n=m>=5?y+1:y;return [`Summer ${n}`,`Summer ${n+1}`,`Full-time ${n}`,`Full-time ${n+1}`]};
 const Q=[
  {title:'What should we call you?',sub:'Your first name is fine.',valid:d=>d.name.trim().length>0,html:d=>`<input class="big-in" id="q-name" data-of="name" value="${esc(d.name)}" placeholder="Your name" autocomplete="given-name">`},
+ {title:'Where do you study?',sub:'Only your year changes the plan. The rest makes SPLIT’s reading of your resume more accurate.',valid:d=>d.school.trim().length>0&&d.year.trim().length>0,html:d=>`<div class="stack">
+  ${fld('school','School',d.school,'e.g. UT Austin')}
+  <div class="row">${fld('year','Year',d.year,'e.g. Junior')}${fld('major','Major',d.major,'e.g. Statistics')}</div>
+  ${fld('gpa','GPA',d.gpa,'Optional','Why we ask: some postings set a GPA cutoff, so SPLIT can flag the ones worth your time. Leave it blank and nothing breaks. It is never shared.')}
+ </div>`},
  {title:'What role are you going for?',sub:'SPLIT compares you against postings for this role.',valid:d=>!!d.role,html:d=>`<div class="opts two-col">${Object.entries(ROLES).map(([k,r])=>opt('role',k,r.name,'',d.role===k,rTile(k))).join('')}</div>`},
+ {title:'Which season are you recruiting for?',sub:'This sets how urgent applying is right now.',valid:d=>!!d.season,html:d=>`<div class="opts">${SEASONS().map(s=>opt('season',s,s,'',d.season===s)).join('')}</div>`},
  {id:'resume',title:'Add your resume',sub:'SPLIT reads it to see which skills you already have and which bullets could be stronger. It stays in this browser.',valid:()=>true,next:d=>d.resume?'Continue':'Skip for now',html:d=>`<div class="stack">${resumeInput('ob')}</div>`},
  {title:'Which of these can you show on your resume?',sub:d=>d.resume?'SPLIT found the highlighted ones on your resume. Add any it missed.':'Pick the ones you could talk about in an interview.',valid:()=>true,html:d=>{const found=d.resume?detectSkills(d.resume,d.role):[];return `<div class="chips">${ROLES[d.role].skills.map(s=>`<button class="chipbtn${d.skills.includes(s.name)?' on':''}${found.includes(s.name)?' found':''}${ui.justPicked==='skill:'+s.name?' just':''}" data-a="qSkill" data-v="${esc(s.name)}" aria-pressed="${d.skills.includes(s.name)}">${esc(s.name)}</button>`).join('')}</div>`}},
- {title:'How many hours a week can you give recruiting?',sub:'SPLIT divides this between applying, building skills, and interview prep.',valid:d=>d.hours>0,html:d=>`<div class="opts">${[[3,'Light','About 30 minutes a day'],[5,'Steady','An hour most weekdays'],[8,'Serious','A real part of your week'],[12,'Intense','Peak recruiting mode']].map(([h,l,s])=>opt('hours',h,`${h} hours · ${l}`,s,d.hours===h)).join('')}</div>`},
- {title:'How has it gone so far?',sub:'Rough numbers are fine. Count everything since you started this cycle.',valid:()=>true,html:d=>`<div class="opts">${ctr('sent','Applications sent','Every one, even quick applies',d.sent)}${ctr('replies','Got a reply','Any reply: email, screen, or assessment',d.replies)}${ctr('interviews','Reached an interview','First round or later',d.interviews)}</div>`},
+ {title:'How many hours a week can you give recruiting?',sub:'SPLIT divides this between applying, building skills, and interview prep. Any number works — even one hour gets a plan.',valid:d=>d.hours>0,html:d=>`<div class="opts">${[[1,'Just a little','One focused hour'],[3,'Light','About 30 minutes a day'],[5,'Steady','An hour most weekdays'],[8,'Serious','A real part of your week'],[12,'Intense','Peak recruiting mode']].map(([h,l,s])=>opt('hours',h,`${h} ${pl(h,'hour')} · ${l}`,s,d.hours===h)).join('')}</div>`},
+ {title:'How has it gone so far?',sub:'Rough numbers are fine. Count everything since you started this cycle.',valid:()=>true,html:d=>`<div class="opts">${ctr('sent','Applications sent','Every one, even quick applies',d.sent)}${ctr('replies','Got a reply','Any reply: email, screen, or assessment',d.replies)}${ctr('interviews','Reached an interview','First round or later',d.interviews)}${ctr('offers','Offers in hand','Signed or still deciding',d.offers)}</div>`},
+ {title:'How confident are you about landing a role?',sub:'There is no right answer. SPLIT asks again in two weeks to see whether the plan is helping.',valid:d=>d.confidence>0,html:d=>`<div class="opts">${[[1,'Not at all confident'],[2,'A little confident'],[3,'Somewhat confident'],[4,'Confident'],[5,'Very confident']].map(([v,l])=>opt('confidence',v,`${v} · ${l}`,'',d.confidence===v)).join('')}</div>`},
  {skip:d=>d.sent===0,title:'How soon after a posting goes up do you usually apply?',sub:'Be honest. This is one of the biggest factors.',valid:d=>!!d.timing,html:d=>`<div class="opts">${[['week','Within a week'],['2wk','One to two weeks later'],['later','More than two weeks later'],['unsure','I don’t check']].map(([v,l])=>opt('timing',v,l,'',d.timing===v)).join('')}</div>`},
  {skip:d=>d.sent===0,title:'Do you change your resume for each application?',sub:'Tailoring means matching the posting’s keywords and order.',valid:d=>!!d.tailor,html:d=>`<div class="opts">${[['usually','Usually'],['sometimes','Sometimes'],['rarely','Rarely or never']].map(([v,l])=>opt('tailor',v,l,'',d.tailor===v)).join('')}</div>`},
  {skip:d=>d.sent===0,title:'Have you applied with a referral?',sub:'Someone at the company passed your name along.',valid:d=>!!d.referral,html:d=>`<div class="opts">${[['often','Yes, often'],['few','A few times'],['never','Never']].map(([v,l])=>opt('referral',v,l,'',d.referral===v)).join('')}</div>`}
@@ -240,21 +292,28 @@ function ovApp(){
 }
 function ovCheckin(){
  const o=ui.overlay;
- const head=(t,step)=>`<div class="ov-h"><div><div class="eyebrow">Check-in · ${fmtRange(o.weekId||S.current.id)}</div><h2 id="ovt">${t}</h2><div class="steps">${[1,2,3].map(i=>`<i class="${i<=step?'on':''}"></i>`).join('')}</div></div>${step<3?'<button class="x" data-a="close" aria-label="Close">×</button>':''}</div>`;
+ const head=(t,step)=>`<div class="ov-h"><div><div class="eyebrow">Check-in · ${fmtRange(o.weekId||S.current.id)}</div><h2 id="ovt">${t}</h2><div class="steps">${[1,2,3,4].map(i=>`<i class="${i<=step?'on':''}"></i>`).join('')}</div></div>${step<4?'<button class="x" data-a="close" aria-label="Close">×</button>':''}</div>`;
  let body='',foot='';
  if(o.step===1){const dx=diagnose(),acts=planActions(S.current.plan).map(a=>renderAct(a,dx));
   body=`<p class="small muted">Tick everything you finished.</p>${acts.map(a=>`<button class="ck-act" data-a="ckDone" data-id="${esc(a.id)}"><span class="chk ${o.done[a.id]?'on':''}"></span><span style="flex:1"><span class="task-t">${esc(a.title)}</span><br><span class="small muted">${CATS[a.cat]} · ${hrs(a.h)}</span></span></button>`).join('')}`;
   foot=`<span class="small muted">${acts.filter(a=>o.done[a.id]).length} of ${acts.length} done</span><button class="btn primary" data-a="ckNext">Next</button>`}
- if(o.step===2){const open=S.apps.filter(a=>!a.closed&&a.reached<3).sort((a,b)=>a.applied<b.applied?1:-1);
+ if(o.step===2){const P=S.current.plan.split,tot=o.logged.apply+o.logged.build+o.logged.prep;
+  body=`<p class="small muted">Roughly how many hours did each one take? Estimates are fine — this is how SPLIT checks whether the plan fits your real week.</p>
+  ${['apply','build','prep'].map(k=>`<div class="hrow">${ico(k,'sm')}<b>${CATS[k]}</b><span class="small muted" style="margin-left:auto;padding-right:10px">planned ${hrs(P[k]||0)}</span><span class="stepper"><button data-a="ckHrs" data-k="${k}" data-d="-0.5" aria-label="Less time on ${CATS[k]}">−</button><span>${hrs(o.logged[k])}</span><button data-a="ckHrs" data-k="${k}" data-d="0.5" aria-label="More time on ${CATS[k]}">+</button></span></div>`).join('')}
+  <p class="small muted" style="margin-top:14px">${hrs(tot)} logged against ${hrs(P.apply+P.build+P.prep)} planned.</p>`;
+  foot=`<button class="btn" data-a="ckBack">Back</button><button class="btn primary" data-a="ckNext">Next</button>`}
+ if(o.step===3){const open=S.apps.filter(a=>!a.closed&&a.reached<3).sort((a,b)=>a.applied<b.applied?1:-1);
   const opts=[['keep','No news'],['responded','Reply'],['interview','Interview'],['offer','Offer'],['rejected','Rejected']];
   body=`<p class="small muted">Only change the ones that moved this week.</p>${open.map(a=>{const cur=o.upd[a.id]||'keep';return `<div class="ck-app"><span class="co">${esc(a.co)}<small>${statusOf(a)[0]} · applied ${fmt(a.applied)}</small></span><div class="seg">${opts.filter(([k])=>!(k==='responded'&&a.reached>=1)&&!(k==='interview'&&a.reached>=2)).map(([k,l])=>`<button class="${cur===k?'on':''}" data-a="ckUpd" data-id="${a.id}" data-v="${k}">${l}</button>`).join('')}</div></div>`}).join('')||'<p>No open applications to update.</p>'}`;
+  if(o.err)body+=`<p class="small" style="color:var(--red);font-weight:800;margin-top:12px">${esc(o.err)}</p>`;
   foot=`<button class="btn" data-a="ckBack">Back</button><button class="btn primary" data-a="ckFinish">Finish</button>`}
- if(o.step===3){const r=o.result,L=r.dx1.lead;
+ if(o.step===4){const r=o.result,L=r.dx1.lead;
   body=`<p class="result-big">${esc(r.dx1.head)}</p>${L&&L.short&&r.dx1.bottleneck!=='ok'?`<p class="h-sub" style="margin-top:0">Main reason: <span class="hl">${esc(L.short)}</span>.</p>`:''}
   ${r.verdicts.length?`<div class="card flat"><h3>What your results showed</h3><ul>${r.verdicts.map(v=>`<li>${esc(v.msg)}</li>`).join('')}</ul></div>`:''}
   <div class="card flat"><h3>How next week changes</h3><div class="compare"><span>This week</span>${splitBar(r.plan0.split)}<span>Next week</span>${splitBar(r.plan1.split)}</div><ul>${r.changes.slice(0,4).map(c=>`<li>${esc(c)}</li>`).join('')}</ul></div>`;
   foot=`<span></span><button class="btn primary" data-a="ckClose">See next week’s plan</button>`}
- return `<div class="scrim center"><div class="modal" role="dialog" aria-modal="true" aria-labelledby="ovt">${head(o.step===1?'What did you get done?':o.step===2?'Any replies?':'Here’s what changed',o.step)}<div class="ov-b">${body}</div><div class="ov-f">${foot}</div></div></div>`;
+ const TITLE={1:'What did you get done?',2:'How long did it take?',3:'Any replies?',4:'Here’s what changed'};
+ return `<div class="scrim center"><div class="modal" role="dialog" aria-modal="true" aria-labelledby="ovt">${head(TITLE[o.step]||TITLE[1],o.step)}<div class="ov-b">${body}</div><div class="ov-f">${foot}</div></div></div>`;
 }
 function ovHours(){
  const P=S.current.plan,t=P.split.apply+P.split.build+P.split.prep;
@@ -280,6 +339,8 @@ function ovStory(){
 function ovSettings(){
  const p=S.profile;
  return drawer(esc(p.name),'Settings',`<label class="field"><span>Name</span><input id="s-name" data-pf="name" value="${esc(p.name)}"></label>
+  <div class="row"><label class="field"><span>School</span><input id="s-school" data-pf="school" value="${esc(p.school||'')}"></label><label class="field"><span>Year</span><input id="s-year" data-pf="year" value="${esc(p.year||'')}"></label></div>
+  <div class="row"><label class="field"><span>Major</span><input id="s-major" data-pf="major" value="${esc(p.major||'')}"></label><label class="field"><span>GPA</span><input id="s-gpa" data-pf="gpa" value="${esc(p.gpa||'')}" placeholder="Optional"><small>Optional, never shared. Used only to flag postings with a GPA cutoff.</small></label></div>
   <label class="field"><span>Target role</span><select id="s-role" data-pf="role">${Object.entries(ROLES).map(([k,r])=>`<option value="${k}" ${p.role===k?'selected':''}>${r.name}</option>`).join('')}</select></label>
   <div class="row"><label class="field"><span>Recruiting for</span><input id="s-season" data-pf="season" value="${esc(p.season)}"></label><label class="field"><span>Hours per week</span><input id="s-hours" type="number" min="1" max="40" step="0.5" data-pf="hours" value="${p.hours}"></label></div>
   <p class="small muted">Changing role or hours rebuilds this week’s plan. Finished tasks stay checked.</p>

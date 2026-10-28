@@ -5,7 +5,7 @@ const LS='split.app.v2';
 let S;
 const ui={view:'week',filter:'all',why:{},cause:{},skill:{},overlay:null,newApp:null,confirm:null,err:''};
 function save(){try{localStorage.setItem(LS,JSON.stringify(S))}catch(e){}}
-function load(){try{const r=localStorage.getItem(LS);if(r){const s=JSON.parse(r);if(s&&(s.v===2||s.v===3)&&s.profile){S=s;if(S.v===2){S.answers={};(S.stories||[]).forEach(st=>{const id=lc((st.tags||[])[0]||'');if(BEH.some(b=>b.id===id)&&!S.answers[id])S.answers[id]={fields:{s:st.s||'',t:st.t||'',a:st.a||'',r:st.r||''}}});S.resume=null;S.v=3}S.answers=S.answers||{};return}}}catch(e){}S=null}
+function load(){try{const r=localStorage.getItem(LS);if(r){const s=JSON.parse(r);if(s&&(s.v===2||s.v===3)&&s.profile){S=s;if(S.v===2){S.answers={};(S.stories||[]).forEach(st=>{const id=lc((st.tags||[])[0]||'');if(BEH.some(b=>b.id===id)&&!S.answers[id])S.answers[id]={fields:{s:st.s||'',t:st.t||'',a:st.a||'',r:st.r||''}}});S.resume=null;S.v=3}S.answers=S.answers||{};S.survey=S.survey||{confidence:[],trust:null};S.profile.gpa=S.profile.gpa||'';return}}}catch(e){}S=null}
 const R=()=>ROLES[S.profile.role]||ROLES.da;
 const roleSkill=n=>R().skills.find(s=>s.name===n)||{name:n,pct:0,focus:'practice',res:'',project:''};
 const appById=id=>S.apps.find(a=>a.id===id);
@@ -49,7 +49,8 @@ function seed(){
  A(3,2,'Dropbox','Data Analyst Intern',1);
  const indeed=apps.find(a=>a.co==='Indeed');
  S={v:3,sample:true,baseline:null,
-  profile:{name:'Jordan Lee',school:'UT Austin',year:'Junior',major:'Statistics & Data Science',role:'da',season:'Summer 2027',hours:10,skills:['Python','R','Excel','Statistics','Communication']},
+  profile:{name:'Jordan Lee',school:'UT Austin',year:'Junior',major:'Statistics & Data Science',gpa:'3.6',role:'da',season:'Summer 2027',hours:10,skills:['Python','R','Excel','Statistics','Communication']},
+  survey:{confidence:[{date:addD(TODAY,-21),v:2,at:'signup'}],trust:null},
   apps,
   skillLog:{SQL:{status:'learning',hours:5,goal:12},Tableau:{status:'gap',hours:0,goal:8}},
   debriefs:[{id:uid(),appId:indeed.id,date:addD(W[1],9),type:'Recruiter screen',questions:['Walk me through your resume','Tell me about a time you used data to change a decision','Why Indeed?'],rating:2,struggled:'Didn’t have a data story ready and rambled on the second question.'}],
@@ -94,13 +95,26 @@ Python (pandas), R, Excel, Statistics, Communication`},
   ],
   current:{id:cur,plan:null}
  };
+ // Backfill the fields commitCheckin now records, so the example student also
+ // demonstrates the History page: hours logged, weekly counts, the funnel as
+ // it stood, and the diagnosis at the time.
+ const DXW=['Not enough applications are going out.','Your applications aren’t getting responses.','Your applications aren’t getting responses.'];
+ const LEADW=['you’ve sent 15 so far, and patterns show up after about 8','your resume isn’t tailored to each posting','you’re applying after postings are already a week old'];
+ S.weeks.forEach((w,k)=>{
+  const upTo=apps.filter(a=>a.applied<=addD(w.id,6)),wa=apps.filter(a=>a.week===w.id);
+  w.sent=wa.length;w.replies=nResp(wa);
+  w.funnel={a:upTo.length,r:nResp(upTo),i:upTo.filter(x=>x.reached>=2).length,o:upTo.filter(x=>x.reached>=3).length};
+  w.logged={};['apply','build','prep'].forEach(c=>{w.logged[c]=w.actions.filter(a=>a.cat===c&&a.done).reduce((s,a)=>s+a.h,0)});
+  w.dx={bottleneck:k?'resp':'thin',head:DXW[k]||DXW[1],lead:LEADW[k]||''};
+ });
  S.current.plan=buildPlan(diagnose());
  planActions(S.current.plan).forEach(a=>{if(a.kind==='apply_fresh'||a.kind==='skill_learn')S.current.plan.done[a.id]=true});
  save();
 }
 
-function freshState(p,b,res){
- S={v:3,sample:false,baseline:b||null,answers:{},resume:res?{text:res.text,name:res.name,added:TODAY,dismissed:[],ai:null,over:{}}:null,profile:p,apps:[],skillLog:{},debriefs:[],stories:[],learned:{},weeks:[],current:{id:mondayOf(TODAY),plan:null}};
+function freshState(p,b,res,confidence){
+ S={v:3,sample:false,baseline:b||null,answers:{},resume:res?{text:res.text,name:res.name,added:TODAY,dismissed:[],ai:null,over:{}}:null,profile:p,apps:[],skillLog:{},debriefs:[],stories:[],learned:{},weeks:[],survey:{confidence:[],trust:null},current:{id:mondayOf(TODAY),plan:null}};
+ if(confidence)S.survey.confidence.push({date:TODAY,v:confidence,at:'signup'});
  S.current.plan=buildPlan(diagnose());save();
 }
 
@@ -119,16 +133,22 @@ const resumeLine=n=>{if(!S.resume||!S.resume.text||!SYN[n])return '';const ln=S.
 function diagnose(){
  const role=R(),apps=S.apps,B=role.bench;
  const settled=apps.filter(settledApp),recent=apps.filter(a=>!settledApp(a));
- const b=Object.assign({sent:0,replies:0,interviews:0},S.baseline||{});
- const F={a:apps.length+b.sent,r:nResp(apps)+b.replies,i:apps.filter(x=>x.reached>=2).length+b.interviews,o:apps.filter(x=>x.reached>=3).length};
+ const b=Object.assign({sent:0,replies:0,interviews:0,offers:0},S.baseline||{});
+ const F={a:apps.length+b.sent,r:nResp(apps)+b.replies,i:apps.filter(x=>x.reached>=2).length+b.interviews,o:apps.filter(x=>x.reached>=3).length+b.offers};
  const sN=settled.length+b.sent,sR=nResp(settled)+b.replies;
  const rates={resp:sN?sR/sN:null,intv:F.r?F.i/F.r:null,offer:F.i?F.o/F.i:null};
  const stages=[
   {k:'resp',label:'Applied → Response',rate:rates.resp,bench:B.resp,n:sN,num:sR,enough:sN>=8,unit:'applications'},
   {k:'intv',label:'Response → Interview',rate:rates.intv,bench:B.intv,n:F.r,num:F.i,enough:F.r>=3,unit:'responses'},
   {k:'offer',label:'Interview → Offer',rate:rates.offer,bench:B.offer,n:F.i,num:F.o,enough:F.i>=3,unit:'interviews'}];
- let bottleneck=sN<8?'start':'ok',worst=1;
+ // PRD F5 separates two low-evidence cases: "not enough data" means they are
+ // applying but nothing has had time to come back, "too few applications"
+ // means they aren't applying. Baseline counts carry no dates, so only logged
+ // applications can count toward the last 14 days.
+ const last14=apps.filter(a=>diffD(TODAY,a.applied)<14).length;
+ let bottleneck=sN<8?(last14>=8?'start':'thin'):'ok',worst=1;
  stages.forEach(s=>{if(s.enough&&s.rate!=null){const v=s.rate*100;s.status=v<s.bench[0]?'below':v>s.bench[1]?'above':'within';const ratio=v/s.bench[0];if(ratio<worst){worst=ratio;bottleneck=s.k}}else s.status='nodata'});
+ if(bottleneck==='ok'&&last14<8)bottleneck='thin';
  const ph=phase();
  const causes=[];
  const recentResp=recent.filter(a=>a.reached>=1);
@@ -204,17 +224,29 @@ function diagnose(){
 
  const upcoming=apps.filter(a=>a.reached===2&&!a.closed&&a.interviewDate&&a.interviewDate>=TODAY).sort((a,b)=>a.interviewDate<b.interviewDate?-1:1);
  if(upcoming.length)causes.forEach(c=>{if(c.id==='stories'||c.id==='interview')c.score+=0.15});
- causes.forEach(c=>{if(c.stage===bottleneck||(bottleneck==='offer'&&c.stage==='intv'))c.score*=1.4;c.learned=S.learned[c.id]||null;if(c.learned==='no_effect')c.score*=0.55;c.score=Math.min(1.6,c.score)});
+ // PRD F5: a change only gets dropped after it shows no effect for 2 weeks,
+ // not the first time. S.learned holds the latest verdict; noEffectRuns counts
+ // consecutive 'no_effect' verdicts for that cause.
+ const runs=S.noEffectRuns||{};
+ causes.forEach(c=>{if(c.stage===bottleneck||(bottleneck==='offer'&&c.stage==='intv')||(bottleneck==='thin'&&c.id==='volume'))c.score*=1.4;c.learned=S.learned[c.id]||null;if(c.learned==='no_effect'&&(runs[c.id]||0)>=2)c.score*=0.55;c.score=Math.min(1.6,c.score)});
  causes.sort((a,b)=>b.score-a.score);
  const respCauses=causes.filter(c=>c.stage==='resp'||c.stage==='start');
  const top=(bottleneck==='intv'||bottleneck==='offer')?causes.filter(c=>c.stage==='intv'&&c.score>=0.2):causes.filter(c=>c.score>=0.2);
- const lead=(bottleneck==='resp'?respCauses:bottleneck==='start'?causes.filter(c=>c.id==='volume'):top)[0]||top[0];
- const HEAD={resp:'Your applications aren’t getting responses.',intv:'You get responses, but they don’t turn into interviews.',offer:'You reach interviews, but not offers yet.',start:'First step: get more applications out.',ok:'Your recruiting funnel looks healthy.'};
+ const lead=(bottleneck==='resp'?respCauses:(bottleneck==='start'||bottleneck==='thin')?causes.filter(c=>c.id==='volume'):top)[0]||top[0];
+ const HEAD={thin:'Not enough applications are going out.',resp:'Your applications aren’t getting responses.',intv:'You get responses, but they don’t turn into interviews.',offer:'You reach interviews, but not offers yet.',start:'First step: get more applications out.',ok:'Your recruiting funnel looks healthy.'};
  return {F,sN,settled,recent,recentResp,rates,stages,bottleneck,causes,top,lead,upcoming,ph,head:HEAD[bottleneck]};
 }
 const cause=(dx,id)=>dx.causes.find(c=>c.id===id);
 
-/* ---------- planner ---------- */
+/* ---------- planner ----------
+ Base splits come straight from the PRD table (F5). Keys are bottleneck ids:
+ thin  = too few applications    (under 8 sent in the last 2 weeks)
+ resp  = applied, few replies    (reply rate below the role's range)
+ intv  = replies, few interviews } the PRD groups both of these under
+ offer = interviews, few offers  } "replies, few offers"
+ start = not enough data         (under 8 applications at least 2 weeks old)
+ ok    = nothing clearly broken  (not in the PRD; kept balanced) */
+const SPLIT_BASE={thin:[.60,.25,.15],resp:[.30,.50,.20],intv:[.20,.25,.55],offer:[.20,.25,.55],start:[.40,.40,.20],ok:[.45,.30,.25]};
 const ACT={
  apply_fresh:{cat:'apply',r(h,c,dx){const n=Math.max(1,Math.round(h/0.5)),k=cause(dx,'timing');return{title:`Apply to ${n} ${pl(n,'role')} posted in the last 7 days`,detail:'Filter Handshake and LinkedIn by “past week.” Log the posting date with each one so SPLIT can compare.',why:k.why,metric:'At least 1 response from this week’s applications within 3 weeks.'}}},
  tailor_test:{cat:'apply',r(h,c,dx){const n=Math.max(1,Math.round(h/0.75)),k=cause(dx,'tailoring'),conf=k.ev.some(e=>e.startsWith('Caution'));return{title:`Tailor your resume for ${n} of ${pl(n,'them','them')}`,detail:conf?'Send the others as-is. All of them are fresh postings, so this separates the effect of tailoring from the effect of timing.':'Match the top keywords in each posting. Paste the posting into Keyword match to check.',why:k.why+(conf?' Tailoring and timing have overlapped so far, so this week tests them apart.':''),metric:'Tailored applications get more responses than untailored ones sent the same week.'}}},
@@ -230,10 +262,10 @@ const aid=p=>p.kind+(p.ctx&&(p.ctx.skill||p.ctx.appId)?'-'+(p.ctx.skill||p.ctx.a
 
 function buildPlan(dx,keepDone){
  const H=S.profile.hours||8,ph=dx.ph,reasons=[];
- let f={resp:[.45,.40,.15],intv:[.25,.25,.50],offer:[.20,.20,.60],start:[.55,.35,.10],ok:[.45,.30,.25]}[dx.bottleneck].slice();
- reasons.push({resp:'The weak point is getting responses, so most time goes to applying better and closing your biggest skill gap.',intv:'You get responses but few interviews, so more time goes to assessments and screens.',offer:'You reach interviews but not offers, so interview prep gets the most time.',start:'There isn’t enough history to diagnose yet, so the first weeks build a pipeline of applications.',ok:'Nothing is clearly broken, so the split stays balanced.'}[dx.bottleneck]);
+ let f=(SPLIT_BASE[dx.bottleneck]||SPLIT_BASE.ok).slice();
+ reasons.push({thin:'Too few applications have gone out recently, so most of the week goes to applying.',resp:'The weak point is getting responses, so most time goes to applying better and closing your biggest skill gap.',intv:'You get responses but few interviews, so more time goes to assessments and screens.',offer:'You reach interviews but not offers, so interview prep gets the most time.',start:'There isn’t enough history to diagnose yet, so the first weeks build a pipeline of applications.',ok:'Nothing is clearly broken, so the split stays balanced.'}[dx.bottleneck]);
  if(ph.k==='peak'&&dx.bottleneck!=='offer'){f[0]+=.1;f[1]-=.1;reasons.push(`It’s ${ph.name}, so applying gets extra time.`)}
- if(ph.k==='off'){f[0]-=.15;f[1]+=.15;reasons.push('Fewer postings this time of year, so skill building gets more time.')}
+ if(ph.k==='off'){f[0]-=.1;f[1]+=.1;reasons.push('Fewer postings this time of year, so skill building gets more time.')}
  if(dx.upcoming.length){const a=dx.upcoming[0];if(f[2]<.3){const d=.3-f[2];f[2]=.3;f[0]-=d*.6;f[1]-=d*.4}reasons.push(`Interview prep is up because ${a.co} is on ${fmtDay(a.interviewDate)}.`)}
  f=f.map(x=>Math.max(0,x));const sum=f.reduce((a,b)=>a+b,0);f=f.map(x=>x/sum);
  let h=f.map(x=>Math.round(x*H*2)/2);const diff=H-h.reduce((a,b)=>a+b,0);h[h.indexOf(Math.max(...h))]+=diff;
@@ -257,9 +289,24 @@ function buildPlan(dx,keepDone){
 }
 function planActions(plan){
  const out=[];
+ const H=(plan.split.apply||0)+(plan.split.build||0)+(plan.split.prep||0);
+ let pool=plan.pool.filter(p=>ACT[p.kind]),split=plan.split;
+ // PRD F5: under 4 hours a week, show at most 3 tasks of at least 0.5 h each.
+ const cap=H<4?Math.max(1,Math.min(3,Math.floor(H/0.5))):Infinity;
+ if(pool.length>cap){
+  pool=pool.slice().sort((a,b)=>b.w-a.w).slice(0,cap);
+  // Re-share the week's hours across only the categories that still have work,
+  // so the totals still add up to what the user committed.
+  const w={apply:0,build:0,prep:0};pool.forEach(p=>w[ACT[p.kind].cat]+=p.w);
+  const sw=w.apply+w.build+w.prep||1;
+  split={apply:0,build:0,prep:0};
+  ['apply','build','prep'].forEach(k=>{split[k]=Math.round(w[k]/sw*H*2)/2});
+  const big=['apply','build','prep'].filter(k=>w[k]>0).sort((a,b)=>w[b]-w[a])[0];
+  if(big)split[big]+=H-(split.apply+split.build+split.prep);
+ }
  ['apply','build','prep'].forEach(cat=>{
-  const list=plan.pool.filter(p=>ACT[p.kind]&&ACT[p.kind].cat===cat).sort((a,b)=>b.w-a.w);
-  const total=plan.split[cat]||0;
+  const list=pool.filter(p=>ACT[p.kind].cat===cat).sort((a,b)=>b.w-a.w);
+  const total=split[cat]||0;
   while(list.length&&total<list.length*0.5)list.pop();
   if(!list.length)return;
   const sw=list.reduce((s,p)=>s+p.w,0);
@@ -282,7 +329,10 @@ function evaluateTests(){
   if(t.cause==='tailoring'){const tl=wa.filter(a=>a.tailored),ut=wa.filter(a=>!a.tailored);if(!tl.length)return;v=(rate(tl)||0)>(rate(ut)||0)?'worked':'no_effect';msg=`Tailoring, week of ${fmt(w.id)}: ${nResp(tl)} of ${tl.length} tailored applications responded vs ${nResp(ut)} of ${ut.length} untailored.${v==='worked'?' Tailoring looks like it helps.':' No difference yet.'}`}
   if(t.cause==='referral'){const rf=wa.filter(a=>a.referral);if(!rf.length)return;const r=rf.filter(a=>a.reached>=1);v=r.length?'worked':'no_effect';msg=r.length?`Your referral at ${join(r.map(a=>a.co))} turned into a response.`:'The referral hasn’t led to a response yet.'}
   if(t.cause==='volume'){const r=nResp(wa);v=r?'worked':'no_effect';msg=`${wa.length} applications from the week of ${fmt(w.id)} produced ${r} ${pl(r,'response')}.`}
-  if(v){t.status=v;t.msg=msg;S.learned[t.cause]=v;out.push({cause:t.cause,v,msg})}
+  if(v){t.status=v;t.msg=msg;S.learned[t.cause]=v;
+   S.noEffectRuns=S.noEffectRuns||{};
+   S.noEffectRuns[t.cause]=v==='no_effect'?(S.noEffectRuns[t.cause]||0)+1:0;
+   out.push({cause:t.cause,v,msg,runs:S.noEffectRuns[t.cause]})}
  }));
  return out;
 }
@@ -303,11 +353,20 @@ function commitCheckin(ck){
  if(dx0.bottleneck!==dx1.bottleneck)changes.push(`The main problem changed: ${dx1.head}`);
  ['apply','build','prep'].forEach(k=>{const a=plan0.split[k],b=plan1.split[k];if(Math.abs(a-b)>=1)changes.push(`${CATS[k]}: ${hrs(a)} → ${hrs(b)}.`)});
  plan1.reasons.forEach(r=>changes.push(r));
- const sent=S.apps.filter(a=>a.week===S.current.id).length;
+ const weekApps=S.apps.filter(a=>a.week===S.current.id),sent=weekApps.length;
  const notes=verdicts.length?verdicts.map(v=>v.msg):[`${sent} ${pl(sent,'application')} sent. Too early to judge them; SPLIT checks again in two weeks.`];
- S.weeks.push({id:S.current.id,split:Object.assign({},plan0.split),actions:acts.map(a=>({t:a.title,cat:a.cat,h:a.h,done:!!plan0.done[a.id]})),notes,changes,tests});
+ // Hours actually spent, asked for at check-in. Powers the History page and
+ // the pilot's plan follow-through metric (PRD: week_snapshots).
+ const logged={apply:+(ck.logged&&ck.logged.apply)||0,build:+(ck.logged&&ck.logged.build)||0,prep:+(ck.logged&&ck.logged.prep)||0};
+ if(ck.confidence)(S.survey=S.survey||{confidence:[],trust:null}).confidence.push({date:S.current.id,v:+ck.confidence,at:'week'+(S.weeks.length+1)});
+ S.weeks.push({id:S.current.id,split:Object.assign({},plan0.split),logged,
+  actions:acts.map(a=>({t:a.title,cat:a.cat,h:a.h,done:!!plan0.done[a.id]})),
+  sent,replies:nResp(weekApps),
+  funnel:{a:dx1.F.a,r:dx1.F.r,i:dx1.F.i,o:dx1.F.o},
+  dx:{bottleneck:dx0.bottleneck,head:dx0.head,lead:(dx0.lead&&dx0.lead.short)||''},
+  notes,changes,tests});
  S.current={id:nextId,plan:plan1};
  save();
- return {dx0,dx1,verdicts,changes,plan0,plan1};
+ return {dx0,dx1,verdicts,changes,plan0,plan1,logged};
 }
 
