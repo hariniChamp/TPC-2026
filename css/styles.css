@@ -20,7 +20,7 @@ img{max-width:100%}
   --f:'Nunito', ui-rounded, 'SF Pro Rounded', system-ui, -apple-system, 'Segoe UI', sans-serif;
   --f-mono:var(--f);
 }
-@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]):not([data-theme="present"]){
   --bg:#131F24; --panel:#131F24; --sunk:#202F36; --ink:#F1F7FB; --ink2:#DCE6EC; --ink3:#8A9EA8;
   --line:#37464F; --line2:#26353D;
   --blue-soft:#163447; --green-soft:#1D3712; --green-ink:#79D635; --red-soft:#3D1E22; --orange-soft:#3A2A12; --orange-ink:#FFB13D;
@@ -33,6 +33,19 @@ img{max-width:100%}
   --blue-soft:#163447; --green-soft:#1D3712; --green-ink:#79D635; --red-soft:#3D1E22; --orange-soft:#3A2A12; --orange-ink:#FFB13D;
   --mark:rgba(255,200,0,.38);
   color-scheme:dark;
+}
+/* Presentation theme: light, high-contrast, projector-safe. Opt in with #present (stays on until #original). */
+:root[data-theme="present"]{
+  --header:#0B6FA4; --header-ink:#FFFFFF; --hbtn-sh:#075A8C; --lime:#8DD13A; --lime-sh:#6FA82B; --lime-ink:#14320A;
+  --bg:#FFFFFF; --panel:#FFFFFF; --sunk:#F4F7F9; --ink:#131F24; --ink2:#2C3A41; --ink3:#5B6B73;
+  --line:#C9D3D9; --line2:#E1E7EB;
+  --blue:#0A72B0; --blue-dk:#075A8C; --blue-soft:#E3F2FB;
+  --green:#2B8000; --green-dk:#1F6100; --green-soft:#E4F5D6; --green-ink:#2B8000;
+  --red:#D62828; --red-dk:#A81D1D; --red-soft:#FCE4E4;
+  --orange:#C76A00; --orange-dk:#9A5200; --orange-soft:#FDEEDB; --orange-ink:#9A5200;
+  --purple:#8B3FC6; --purple-dk:#6E2FA0;
+  --mark:#FFE48A;
+  color-scheme:light;
 }
 html{height:100%}body{min-height:100%}
 body{background:var(--bg);color:var(--ink);font:600 16px/1.5 var(--f);-webkit-font-smoothing:antialiased}
